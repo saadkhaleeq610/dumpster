@@ -1,0 +1,22 @@
+# Go build output
+dumpster
+dumpster.exe
+
+# Backup files
+*.dump
+*.sql
+*.tar.gz
+*.gz
+
+# Logs
+*.log
+
+# Environment and secrets
+.env
+*.env
+
+# IDE and OS-specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
