@@ -1,6 +1,3 @@
-/*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -9,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 
+	utils "github.com/saadkhaleeq610/dumpster/utility"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +22,17 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+
+		logFile, err := os.OpenFile("dumpster.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer logFile.Close()
+
+		logger := log.New(logFile, "", log.LstdFlags)
+		logger.Println("🔁 Starting backup for DB:", dbname)
+		start := time.Now()
+
 		fmt.Println("Starting PostgreSQL backup...")
 
 		cmdArgs := []string{
@@ -35,19 +45,38 @@ to quickly create a Cobra application.`,
 		}
 
 		dumpCmd := exec.Command("pg_dump", cmdArgs...)
-
 		dumpCmd.Env = append(os.Environ(), "PGPASSWORD="+password)
-
 		dumpCmd.Stdout = os.Stdout
 		dumpCmd.Stderr = os.Stderr
 
-		err := dumpCmd.Run()
+		err = dumpCmd.Run()
 		if err != nil {
 			log.Fatalf("Backup failed: %v", err)
 		}
 
 		fmt.Printf("Backup complete: %s\n", output)
+
+		compressed := output + ".gz"
+		err = utils.CompressFile(output, compressed)
+		if err != nil {
+			log.Fatalf("Compression failed: %v", err)
+		}
+
+		fmt.Printf("Compressed: %s\n", compressed)
+
+		os.Remove(output)
+
+		duration := time.Since(start)
+		logger.Printf("Backup complete: %s | Size: %s | Duration: %s\n", compressed, fileSize(compressed), duration)
 	},
+}
+
+func fileSize(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("%.2f MB", float64(info.Size())/1024.0/1024.0)
 }
 
 var (
