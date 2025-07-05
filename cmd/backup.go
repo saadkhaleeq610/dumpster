@@ -14,15 +14,8 @@ import (
 
 var backupCmd = &cobra.Command{
 	Use:   "backup",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Creates a timestamped PostgreSQL backup and compresses it",
 	Run: func(cmd *cobra.Command, args []string) {
-
 		logFile, err := os.OpenFile("dumpster.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Fatal(err)
@@ -30,17 +23,20 @@ to quickly create a Cobra application.`,
 		defer logFile.Close()
 
 		logger := log.New(logFile, "", log.LstdFlags)
-		logger.Println("🔁 Starting backup for DB:", dbname)
+		logger.Println("Starting backup for DB:", dbname)
 		start := time.Now()
 
 		fmt.Println("Starting PostgreSQL backup...")
+
+		timestamp := time.Now().Format("2006-01-02_15-04-05")
+		filename := fmt.Sprintf("backup_%s.dump", timestamp)
 
 		cmdArgs := []string{
 			"-h", host,
 			"-p", strconv.Itoa(port),
 			"-U", user,
 			"-F", "c",
-			"-f", output,
+			"-f", filename,
 			dbname,
 		}
 
@@ -54,17 +50,26 @@ to quickly create a Cobra application.`,
 			log.Fatalf("Backup failed: %v", err)
 		}
 
-		fmt.Printf("Backup complete: %s\n", output)
+		fmt.Printf("Backup complete: %s\n", filename)
 
-		compressed := output + ".gz"
-		err = utils.CompressFile(output, compressed)
+		compressed := filename + ".gz"
+		err = utils.CompressFile(filename, compressed)
 		if err != nil {
 			log.Fatalf("Compression failed: %v", err)
 		}
 
 		fmt.Printf("Compressed: %s\n", compressed)
 
-		os.Remove(output)
+		if uploadToS3 {
+			fmt.Println("Uploading to S3...")
+			err = utils.UploadToS3(compressed, bucket, region)
+			if err != nil {
+				log.Fatalf("S3 upload failed: %v", err)
+			}
+			fmt.Println("S3 upload complete.")
+		}
+
+		os.Remove(filename)
 
 		duration := time.Since(start)
 		logger.Printf("Backup complete: %s | Size: %s | Duration: %s\n", compressed, fileSize(compressed), duration)
@@ -80,12 +85,14 @@ func fileSize(path string) string {
 }
 
 var (
-	host     string
-	port     int
-	user     string
-	password string
-	dbname   string
-	output   string
+	host       string
+	port       int
+	user       string
+	password   string
+	dbname     string
+	bucket     string
+	region     string
+	uploadToS3 bool
 )
 
 func init() {
@@ -96,5 +103,8 @@ func init() {
 	backupCmd.Flags().StringVar(&user, "user", "", "Database user")
 	backupCmd.Flags().StringVar(&password, "password", "", "Database password")
 	backupCmd.Flags().StringVar(&dbname, "dbname", "", "Database name")
-	backupCmd.Flags().StringVar(&output, "output", "backup.dump", "Output file name")
+	backupCmd.Flags().BoolVar(&uploadToS3, "s3", false, "Upload backup to AWS S3")
+	backupCmd.Flags().StringVar(&bucket, "bucket", "", "AWS S3 bucket name")
+	backupCmd.Flags().StringVar(&region, "region", "us-east-1", "AWS region")
+
 }
